@@ -1,0 +1,11 @@
+const fs = require('fs');
+let content = fs.readFileSync('src/App.tsx', 'utf8');
+content = content.replace(/<Route path="settings".*\n/g, '');
+content = content.replace(/<Route path="coupons".*\n/g, '');
+content = content.replace(/<Route path="returns".*\n/g, '');
+content = content.replace(/<Route path="payments".*\n/g, '');
+content = content.replace(/<Route path="profit".*\n/g, '');
+content = content.replace(/<Route path="notifications".*\n/g, '');
+content = content.replace(/<Route path="users".*\n/g, '');
+content = content.replace(/<Route path="activity".*\n/g, '');
+fs.writeFileSync('src/App.tsx', content);

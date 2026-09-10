@@ -1,0 +1,8 @@
+{
+  "name": "SwiftStore E-commerce",
+  "description": "A full-featured e-commerce platform with storefront and admin panel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
