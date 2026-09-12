@@ -1,5 +1,4 @@
 const puppeteer = require('puppeteer');
-
 (async () => {
   const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
   const page = await browser.newPage();
@@ -11,4 +10,5 @@ const puppeteer = require('puppeteer');
   await new Promise(r => setTimeout(r, 2000));
   
   await browser.close();
+  process.exit(0);
 })();

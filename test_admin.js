@@ -1,5 +1,26 @@
-import { initializeApp, applicationDefault } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-initializeApp({ credential: applicationDefault() });
-const db = getFirestore();
-db.collection('test').doc('test').get().then(doc => console.log('success', doc.exists)).catch(e => console.error(e.message));
+import admin from 'firebase-admin';
+import fs from 'fs';
+
+const configRaw = fs.readFileSync('firebase-applet-config.json', 'utf8');
+const config = JSON.parse(configRaw);
+
+admin.initializeApp({
+  projectId: config.projectId
+});
+
+async function run() {
+  try {
+    await admin.auth().projectConfigManager().updateProjectConfig({
+      signIn: {
+        email: {
+          enabled: true,
+          passwordRequired: true
+        }
+      }
+    });
+    console.log("Enabled Email/Password auth!");
+  } catch(e) {
+    console.error("Error:", e);
+  }
+}
+run();

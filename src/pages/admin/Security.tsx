@@ -15,7 +15,7 @@ export default function Security() {
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
+      setError('New password and confirm password do not match.');
       return;
     }
 
@@ -25,30 +25,12 @@ export default function Security() {
     setSuccess('');
 
     try {
-      // 1. Update Backend Source of Truth First
-      const res = await fetch('/api/admin/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword, newPassword })
-      });
-      
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to update password');
-      }
+      // Update Firebase Auth password
+      const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
+      await reauthenticateWithCredential(currentUser, credential);
+      await updatePassword(currentUser, newPassword);
 
-      // 2. Try to update Firebase Auth if they have a password provider
-      try {
-        const credential = EmailAuthProvider.credential(currentUser.email, currentPassword);
-        await reauthenticateWithCredential(currentUser, credential);
-        await updatePassword(currentUser, newPassword);
-      } catch (fbError) {
-        // If Firebase Auth fails (e.g. they don't have a password provider), 
-        // we already updated the main backend source of truth, so it's fine.
-        console.warn("Firebase Auth update skipped/failed:", fbError);
-      }
-
-      setSuccess('Your Owner Panel password has been updated. Please log in again.');
+      setSuccess('Owner password updated successfully.');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
@@ -57,10 +39,18 @@ export default function Security() {
       setTimeout(() => {
         logout();
       }, 2000);
-
     } catch (err: any) {
-      console.error('Password update failed:', err);
-      setError(err.message || 'Failed to update password. Please check your current password.');
+      if (err.code === 'auth/operation-not-allowed') {
+        setError('Email/Password authentication is disabled in Firebase. Enable it in Firebase Authentication → Sign-in providers → Email/Password.');
+      } else if (err.code === 'auth/requires-recent-login') {
+        setError('Security requirement: Please log out, re-authenticate securely, and try changing your password again.');
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Current password is incorrect.');
+      } else if (err.code === 'auth/weak-password') {
+         setError('Password should be at least 6 characters.');
+      } else {
+        setError(err.message || 'Failed to update password. Please check your current password.');
+      }
     } finally {
       setLoading(false);
     }

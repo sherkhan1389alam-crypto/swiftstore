@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updatePassword, reauthenticateWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
 
 export default function AdminLogin() {
-  const { loginWithEmail, currentUser, isAdmin } = useAuth();
+  const { currentUser, isAdmin } = useAuth();
   const navigate = useNavigate();
   
   const [password, setPassword] = useState('');
@@ -12,13 +14,28 @@ export default function AdminLogin() {
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [isSetupMode, setIsSetupMode] = useState(false);
   
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutTime, setLockoutTime] = useState<number | null>(null);
 
   useEffect(() => {
-    if (currentUser && isAdmin && sessionStorage.getItem('owner_auth') === 'true' && !success) {
-      navigate('/admin');
+    if (currentUser && !isAdmin) {
+      // Not an admin, we handle this via redirect or let the form show an error?
+      // Actually AdminRoute redirects to login, so we are here.
+      // But AdminRoute doesn't redirect them if they are authenticated but not admin.
+      // Wait, AdminRoute shows 403 now! So they won't even be here.
+    }
+  }, [currentUser, isAdmin]);
+
+  useEffect(() => {
+    const hasPasswordProvider = currentUser?.providerData?.some(p => p.providerId === 'password');
+    if (currentUser && isAdmin) {
+      if (hasPasswordProvider && !success) {
+        navigate('/admin');
+      } else if (!hasPasswordProvider) {
+        setIsSetupMode(true);
+      }
     }
   }, [currentUser, isAdmin, navigate, success]);
   
@@ -47,37 +64,59 @@ export default function AdminLogin() {
     setLoading(true);
     
     try {
-      const res = await fetch('/api/admin/verify-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
+      const VITE_OWNER_EMAIL = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
       
-      if (!res.ok) {
-        throw new Error('invalid-password');
+      if (isSetupMode) {
+        if (currentUser && isAdmin) {
+            // Already logged in via Google, but setting password for the first time
+            try {
+                await updatePassword(auth.currentUser!, password);
+            } catch (innerErr: any) {
+                if (innerErr.code === 'auth/requires-recent-login') {
+                    // Try to re-authenticate with Google silently/popup
+                    const provider = new GoogleAuthProvider();
+                    await reauthenticateWithPopup(auth.currentUser!, provider);
+                    await updatePassword(auth.currentUser!, password);
+                } else {
+                    throw innerErr;
+                }
+            }
+        } else {
+            // Creating account completely from scratch
+            await createUserWithEmailAndPassword(auth, VITE_OWNER_EMAIL, password);
+        }
+      } else {
+        await signInWithEmailAndPassword(auth, VITE_OWNER_EMAIL, password);
       }
       
-      try {
-        await loginWithEmail('sherkhan1389alam@gmail.com', password);
-      } catch (err: any) {
-        console.warn('Firebase login warning:', err);
-      }
-
-      sessionStorage.setItem('owner_auth', 'true');
+      // Successfully authenticated via Firebase
       setSuccess(true);
-      setTimeout(() => {
-        navigate('/admin');
-      }, 1000);
+      navigate('/admin');
     } catch (err: any) {
       setPassword('');
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
       
-      if (newAttempts >= 5) {
+      if (err.code === 'auth/too-many-requests' || newAttempts >= 5) {
         setLockoutTime(Date.now() + 60000); // 1 minute lockout
         setError('Too many failed attempts. Please try again later.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Email/Password authentication is disabled in Firebase. Enable Email/Password in Firebase Authentication → Sign-in providers.');
+      } else if (err.code === 'auth/requires-recent-login') {
+        setError('Security requirement: Session too old. Please return to the store, log out, log back in, and try again.');
+      } else if (err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+        setError('Incorrect owner password.');
+      } else if (err.code === 'auth/email-already-in-use') {
+        setError('Owner account already exists with a different sign-in method. Please contact support.');
+      } else if (err.code === 'auth/user-not-found') {
+        setIsSetupMode(true);
+        setError('Owner account not initialized. Please type the desired owner password and click Initialize Owner Account to set it up.');
+      } else if (err.code === 'auth/invalid-api-key') {
+        setError('Owner authentication is not configured correctly. Check Firebase configuration.');
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Network error. Please check your connection and try again.');
       } else {
-        setError('Access denied. Please enter the correct owner password.');
+        setError(err.message || 'Authentication failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -89,9 +128,14 @@ export default function AdminLogin() {
       <div className="max-w-md w-full bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden relative">
         <div className="p-8 sm:p-10">
           <div className="text-center mb-8">
-            <div className="text-5xl mb-4">🔐</div>
-            <h1 className="text-2xl font-black text-slate-900 mb-2 tracking-tight">Owner Panel</h1>
-            <p className="text-slate-500 font-medium">Enter your owner password to continue</p>
+            <div className="flex justify-center mb-6">
+              <div className="bg-indigo-600 p-4 rounded-2xl shadow-lg shadow-indigo-600/30">
+                <ShieldCheck className="w-10 h-10 text-white" />
+              </div>
+            </div>
+            <h2 className="text-sm font-bold text-indigo-600 mb-1 tracking-widest uppercase">SwiftStore Pro</h2>
+            <h1 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Owner Panel Login</h1>
+            <p className="text-slate-500 font-medium">{isSetupMode ? 'Set your owner password to secure the panel' : 'Enter your owner password to continue'}</p>
           </div>
           
           {success ? (
@@ -103,8 +147,7 @@ export default function AdminLogin() {
             <form onSubmit={handleSubmit} className="space-y-6">
               {error && (
                 <div className="bg-red-50 border border-red-100 text-red-600 p-4 rounded-xl text-sm font-bold flex flex-col items-center justify-center gap-1 text-center">
-                  <span className="text-lg">❌ Incorrect password</span>
-                  <span className="font-medium">{error}</span>
+                  <span className="font-medium text-base">{error}</span>
                 </div>
               )}
               
@@ -135,9 +178,9 @@ export default function AdminLogin() {
                 <button
                   type="submit"
                   disabled={loading || (lockoutTime !== null)}
-                  className="w-full bg-slate-900 text-white font-bold py-4 px-4 rounded-xl hover:bg-slate-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-lg shadow-slate-900/20"
+                  className="w-full bg-indigo-600 text-white font-bold py-4 px-4 rounded-xl hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 shadow-lg shadow-indigo-600/20"
                 >
-                  {loading ? 'Verifying...' : 'Unlock Owner Panel'}
+                  {loading ? 'Verifying...' : isSetupMode ? 'Initialize Owner Account' : 'Unlock Owner Panel'}
                 </button>
                 
                 <button
@@ -145,7 +188,7 @@ export default function AdminLogin() {
                   onClick={() => navigate('/')}
                   className="w-full bg-white text-slate-600 border border-slate-200 font-bold py-4 px-4 rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"
                 >
-                  Cancel
+                  Return to Store
                 </button>
               </div>
             </form>

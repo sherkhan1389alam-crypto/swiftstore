@@ -1,6 +1,6 @@
 import React from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { User, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, updatePassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../lib/firebase';
 
@@ -10,6 +10,8 @@ interface AuthContextType {
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, pass: string) => Promise<void>;
+  createOwnerAccount: (email: string, pass: string) => Promise<void>;
+  initializeOwnerPassword: (pass: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -30,31 +32,32 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
+          const ownerEmail = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+          const isOwner = user.email === ownerEmail;
+          setIsAdmin(isOwner);
+          
           const userDocRef = doc(db, 'users', user.uid);
           const userDoc = await getDoc(userDocRef);
           
-          let role = 'CUSTOMER';
+          let role = isOwner ? 'ADMIN' : 'CUSTOMER';
           
           if (userDoc.exists()) {
-            role = userDoc.data().role || 'CUSTOMER';
-          } else {
-            // Check if it's the owner email, otherwise default to CUSTOMER
-            if (user.email === 'sherkhan1389alam@gmail.com') {
-              role = 'ADMIN';
+            // Respect existing roles from DB for customers if needed, but owner is always ADMIN
+            if (!isOwner) {
+                role = userDoc.data().role || 'CUSTOMER';
             }
-            
+          } else {
             await setDoc(userDocRef, {
-              name: user.displayName,
+              name: user.displayName || '',
               email: user.email,
               role: role,
               createdAt: Date.now()
             });
           }
-          
-          setIsAdmin(role === 'ADMIN');
         } catch (error) {
-          console.warn("User role fetch failed (offline mode):", error);
-          setIsAdmin(false);
+          // Only fallback to the secure check if Firestore fails (offline mode)
+          const ownerEmail = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+          setIsAdmin(user.email === ownerEmail);
         }
       } else {
         setIsAdmin(false);
@@ -71,37 +74,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch (error: any) {
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        if (email === 'sherkhan1389alam@gmail.com') {
-          try {
-            const res = await fetch('/api/admin/verify-password', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ password: pass })
-            });
-            if (res.ok) {
-              await createUserWithEmailAndPassword(auth, email, pass);
-              return;
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        }
-      }
-      throw error;
-    }
+    // Only attempt to login with Firebase Auth
+    await signInWithEmailAndPassword(auth, email, pass);
   };
 
+
+
+  const createOwnerAccount = async (email: string, pass: string) => { await createUserWithEmailAndPassword(auth, email, pass); }; 
+  const initializeOwnerPassword = async (pass: string) => { if(auth.currentUser) await updatePassword(auth.currentUser, pass); };
   const logout = async () => {
-    sessionStorage.removeItem('owner_auth');
     await signOut(auth);
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, isAdmin, loading, loginWithGoogle, loginWithEmail, logout }}>
+    <AuthContext.Provider value={{ currentUser, isAdmin, loading, loginWithGoogle, loginWithEmail, createOwnerAccount, initializeOwnerPassword, logout }}>
       {!loading && children}
     </AuthContext.Provider>
   );
