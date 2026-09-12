@@ -64,7 +64,8 @@ export default function AdminLogin() {
     setLoading(true);
     
     try {
-      const VITE_OWNER_EMAIL = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+      const rawOwnerEmail = import.meta.env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+      const VITE_OWNER_EMAIL = rawOwnerEmail.trim().toLowerCase();
       
       if (isSetupMode) {
         if (currentUser && isAdmin) {
@@ -91,11 +92,14 @@ export default function AdminLogin() {
       
       // Successfully authenticated via Firebase
       setSuccess(true);
-      navigate('/admin');
+      // Short delay to allow AuthContext to update its isAdmin state and avoid redirect bounces
+      setTimeout(() => navigate('/admin'), 1000);
     } catch (err: any) {
       setPassword('');
       const newAttempts = failedAttempts + 1;
       setFailedAttempts(newAttempts);
+      
+      console.error('Owner Login Authentication Failed. Code:', err.code);
       
       if (err.code === 'auth/too-many-requests' || newAttempts >= 5) {
         setLockoutTime(Date.now() + 60000); // 1 minute lockout

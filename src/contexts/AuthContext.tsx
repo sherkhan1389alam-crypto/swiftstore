@@ -32,8 +32,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          const ownerEmail = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
-          const isOwner = user.email === ownerEmail;
+          const rawOwnerEmail = import.meta.env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+          const ownerEmail = rawOwnerEmail.trim().toLowerCase();
+          const isOwner = user.email ? user.email.trim().toLowerCase() === ownerEmail : false;
           setIsAdmin(isOwner);
           
           const userDocRef = doc(db, 'users', user.uid);
@@ -56,8 +57,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         } catch (error) {
           // Only fallback to the secure check if Firestore fails (offline mode)
-          const ownerEmail = (import.meta as any).env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
-          setIsAdmin(user.email === ownerEmail);
+          const rawOwnerEmail = import.meta.env.VITE_OWNER_EMAIL || 'sherkhan1389alam@gmail.com';
+          const ownerEmail = rawOwnerEmail.trim().toLowerCase();
+          setIsAdmin(user.email ? user.email.trim().toLowerCase() === ownerEmail : false);
         }
       } else {
         setIsAdmin(false);
